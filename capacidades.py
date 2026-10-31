@@ -6,6 +6,7 @@ El docstring y los tipos de cada tool son lo único que el modelo lee para decid
 
 import csv
 import sqlite3
+import unicodedata
 from datetime import date
 from functools import cache
 from typing import Literal
@@ -13,6 +14,7 @@ from typing import Literal
 import chromadb
 import httpx
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from openpyxl import load_workbook
 from openai import OpenAI
 from pydantic_ai.capabilities import Capability
 from pypdf import PdfReader
@@ -196,6 +198,93 @@ def crear_base() -> None:
 def hoy() -> str:
     """Instrucción dinámica: el modelo no sabe qué día es; se lo decimos en cada mensaje."""
     return f"Hoy es {date.today().isoformat()}."
+
+
+# ═══ S1 · Buscar clientes en la lista adjunta ═════════════════════════════════════════
+LISTA_CLIENTES = DATOS / "Lista-de-clientes-con-nombre-y-direccion.csv"
+clientes = Capability(
+    id="lista_clientes",
+    description="Busca clientes por nombre o ID y devuelve su nombre y dirección desde la lista adjunta",
+    instructions=(
+        "Para consultar clientes, usa buscar_clientes. Si piden toda la lista, muestra el resumen limitado "
+        "que devuelve la herramienta; para encontrar a alguien, busca por su nombre o ID. "
+        "Devuelve únicamente nombre y dirección/localidad: no reveles fecha de nacimiento, teléfono ni correo."
+    ),
+)
+
+
+def _normalizar_busqueda(texto: object) -> str:
+    """Compara texto ignorando mayúsculas y tildes."""
+    descompuesto = unicodedata.normalize("NFKD", str(texto or ""))
+    return "".join(caracter for caracter in descompuesto if not unicodedata.combining(caracter)).casefold().strip()
+
+
+@clientes.tool_plain
+def buscar_clientes(busqueda: str = "") -> dict:
+    """Busca hasta 20 clientes por nombre o ID; sin búsqueda muestra los primeros 20.
+
+    Args:
+        busqueda: nombre o ID del cliente. Puede quedar vacío para ver una muestra de la lista.
+    """
+    if not LISTA_CLIENTES.is_file():
+        return {"error": f"No se encontró el archivo de clientes: {LISTA_CLIENTES.name}"}
+
+    try:
+        archivo = LISTA_CLIENTES.open("rb")
+    except OSError as error:
+        return {"error": f"No se pudo abrir la lista de clientes: {error}"}
+
+    with archivo:
+        libro = load_workbook(archivo, read_only=True, data_only=True)
+        try:
+            hoja = libro.active
+            filas = hoja.iter_rows(values_only=True)
+            encabezados = next(filas, None)
+            if not encabezados:
+                return {"error": "La lista de clientes está vacía"}
+
+            columnas = {_normalizar_busqueda(nombre): indice for indice, nombre in enumerate(encabezados)}
+            indice_nombre = columnas.get("nombre completo")
+            indice_direccion = columnas.get("direccion")
+            indice_localidad = columnas.get("localidad y codigo postal")
+            indice_id = columnas.get("id")
+            if indice_nombre is None or indice_direccion is None:
+                return {"error": "La lista no contiene las columnas necesarias de nombre y dirección"}
+
+            termino = _normalizar_busqueda(busqueda)
+            resultados = []
+            coincidencias = 0
+            for fila in filas:
+                nombre = fila[indice_nombre] if indice_nombre < len(fila) else None
+                identificador = fila[indice_id] if indice_id is not None and indice_id < len(fila) else None
+                if termino and termino not in _normalizar_busqueda(nombre) and termino not in _normalizar_busqueda(
+                    identificador
+                ):
+                    continue
+
+                coincidencias += 1
+                if len(resultados) < 20:
+                    direccion = fila[indice_direccion] if indice_direccion < len(fila) else None
+                    localidad = (
+                        fila[indice_localidad]
+                        if indice_localidad is not None and indice_localidad < len(fila)
+                        else None
+                    )
+                    resultado = {"nombre": nombre, "direccion": direccion}
+                    if localidad:
+                        resultado["localidad_y_codigo_postal"] = localidad
+                    resultados.append(resultado)
+        finally:
+            libro.close()
+
+    return {
+        "busqueda": busqueda.strip() or "lista completa",
+        "coincidencias": coincidencias,
+        "resultados": resultados,
+        "limite": 20,
+        "truncado": coincidencias > 20,
+        "fuente": LISTA_CLIENTES.name,
+    }
 
 
 # Lectura y escritura van en capabilities separadas: a otro agente le podrías dar solo la primera

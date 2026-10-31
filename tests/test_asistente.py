@@ -10,6 +10,7 @@ os.environ.setdefault("GEMINI_API_KEY_LOCAL", "clave-de-prueba")  # para importa
 
 import httpx  # noqa: E402
 import pytest  # noqa: E402
+from openpyxl import Workbook  # noqa: E402
 from pydantic import SecretStr  # noqa: E402
 from pydantic_ai import ModelResponse, TextPart, ToolCallPart, ToolReturnPart  # noqa: E402
 from pydantic_ai.models.function import FunctionModel  # noqa: E402
@@ -37,6 +38,18 @@ def pide(tool: str, args: dict) -> FunctionModel:
         return ModelResponse(parts=[ToolCallPart(tool, args)])
 
     return FunctionModel(responder)
+
+
+def crear_lista_clientes(ruta):
+    libro = Workbook()
+    hoja = libro.active
+    hoja.append(["ID", "Nombre completo", "Fecha de nacimiento", "Dirección", "Localidad y Código postal",
+                 "Teléfono", "Correo electrónico"])
+    hoja.append([1, "José Álvarez", "1990-01-01", "Calle de prueba 123", "Ciudad de prueba", "555-0100",
+                 "prueba@example.invalid"])
+    hoja.append([2, "Ana Ejemplo", "1991-02-02", "Avenida de muestra 456", "Otra ciudad", "555-0101",
+                 "ana@example.invalid"])
+    libro.save(ruta)
 
 
 def test_consultar_gastos_sin_modelo():
@@ -109,6 +122,37 @@ def test_documentos_incluye_recetas_adjuntas():
     )
     assert "CHULETAS" in texto.upper()
     assert "GLASEADAS" in texto.upper()
+
+
+async def test_agente_puede_buscar_clientes_por_nombre(monkeypatch, tmp_path):
+    archivo = tmp_path / "Lista-de-clientes-con-nombre-y-direccion.csv"
+    crear_lista_clientes(archivo)
+    monkeypatch.setattr(capacidades, "LISTA_CLIENTES", archivo)
+
+    with asistente.asistente.override(model=pide("buscar_clientes", {"busqueda": "Jose Alvarez"})):
+        respuesta = await asistente.responder("Busca a José Álvarez y dime su dirección")
+
+    assert "José Álvarez" in respuesta
+    assert "Calle de prueba 123" in respuesta
+    assert "555-0100" not in respuesta
+    assert "prueba@example.invalid" not in respuesta
+
+
+def test_buscar_clientes_limita_listado_y_acepta_archivo_xlsx_con_extension_csv(monkeypatch, tmp_path):
+    archivo = tmp_path / "Lista-de-clientes-con-nombre-y-direccion.csv"
+    libro = Workbook()
+    hoja = libro.active
+    hoja.append(["ID", "Nombre completo", "Dirección"])
+    for numero in range(25):
+        hoja.append([numero, f"Cliente {numero}", f"Dirección {numero}"])
+    libro.save(archivo)
+    monkeypatch.setattr(capacidades, "LISTA_CLIENTES", archivo)
+
+    resultado = capacidades.buscar_clientes()
+
+    assert resultado["coincidencias"] == 25
+    assert len(resultado["resultados"]) == 20
+    assert resultado["truncado"] is True
 
 
 async def test_registrar_gasto_escribe_en_la_base():
