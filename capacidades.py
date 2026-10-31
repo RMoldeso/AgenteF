@@ -22,8 +22,14 @@ from config import DATOS, settings
 # ═══ S1 · Tools de lectura con APIs públicas ══════════════════════════════════════════
 apis = Capability(
     id="apis_publicas",
-    description="Consulta indicadores económicos (Banco Mundial) y clima (Open Meteo) con sus APIs públicas",
-    instructions="Usa las APIs para obtener datos reales. Si una API no tiene el dato, dilo, y no inventes datos",
+    description=(
+        "Consulta indicadores económicos, clima, clasificación actual de Fórmula 1 "
+        "y cotizaciones de criptomonedas con APIs públicas gratuitas"
+    ),
+    instructions=(
+        "Usa las APIs para obtener datos reales de economía, clima, Fórmula 1 y criptomonedas. "
+        "Indica la fuente y no inventes datos."
+    ),
 )
 
 
@@ -60,6 +66,111 @@ def clima_cochabamba() -> dict:
     respuesta = httpx.get("https://api.open-meteo.com/v1/forecast", params=params, timeout=10)
     respuesta.raise_for_status()
     return {"temperatura": respuesta.json()["current"]["temperature_2m"], "fuente": "Open Meteo"}
+
+
+@apis.tool_plain
+def clasificacion_f1(tipo: Literal["pilotos", "constructores"] = "pilotos") -> dict:
+    """Clasificación actual de Fórmula 1, con los primeros diez puestos.
+
+    Args:
+        tipo: "pilotos" para la clasificación de pilotos o "constructores" para equipos.
+    """
+    endpoint = "driverStandings" if tipo == "pilotos" else "constructorStandings"
+    url = f"https://api.jolpi.ca/ergast/f1/current/{endpoint}.json"
+    try:
+        respuesta = httpx.get(url, timeout=10)
+        respuesta.raise_for_status()
+    except httpx.HTTPError as error:
+        return {"error": f"No se pudo consultar la clasificación de F1: {error}"}
+
+    datos = respuesta.json().get("MRData", {}).get("StandingsTable", {})
+    listas = datos.get("StandingsLists", [])
+    if not listas:
+        return {"error": "La API de F1 no tiene una clasificación disponible en este momento"}
+
+    registros = listas[0].get("DriverStandings" if tipo == "pilotos" else "ConstructorStandings", [])
+    if not registros:
+        return {"error": "La API de F1 no devolvió puestos para la clasificación solicitada"}
+
+    puestos = []
+    for registro in registros[:10]:
+        competidor = registro["Driver"] if tipo == "pilotos" else registro["Constructor"]
+        nombre = (
+            f"{competidor['givenName']} {competidor['familyName']}"
+            if tipo == "pilotos"
+            else competidor["name"]
+        )
+        puesto = {
+            "posicion": int(registro["position"]),
+            "nombre": nombre,
+            "puntos": float(registro["points"]),
+            "victorias": int(registro["wins"]),
+        }
+        if tipo == "pilotos" and registro.get("Constructors"):
+            puesto["equipo"] = registro["Constructors"][0]["name"]
+        puestos.append(puesto)
+
+    return {
+        "temporada": datos.get("season"),
+        "ronda": datos.get("round"),
+        "tipo": tipo,
+        "clasificacion": puestos,
+        "fuente": "Jolpica F1 API",
+    }
+
+
+_MONEDAS = {
+    "btc": "btc-bitcoin",
+    "bitcoin": "btc-bitcoin",
+    "eth": "eth-ethereum",
+    "ethereum": "eth-ethereum",
+    "sol": "sol-solana",
+    "solana": "sol-solana",
+    "xrp": "xrp-xrp",
+    "doge": "doge-dogecoin",
+    "dogecoin": "doge-dogecoin",
+    "ada": "ada-cardano",
+    "cardano": "ada-cardano",
+    "bnb": "bnb-binance-coin",
+    "binance coin": "bnb-binance-coin",
+}
+
+
+@apis.tool_plain
+def cotizacion_cripto(moneda: str) -> dict:
+    """Precio actual en dólares de una criptomoneda conocida.
+
+    Args:
+        moneda: símbolo o nombre: BTC/Bitcoin, ETH/Ethereum, SOL/Solana, XRP, DOGE/Dogecoin, ADA/Cardano o BNB.
+    """
+    simbolo = moneda.strip().lower()
+    identificador = _MONEDAS.get(simbolo)
+    if identificador is None:
+        return {
+            "error": (
+                f"No reconozco la criptomoneda {moneda!r}. "
+                "Prueba con BTC, ETH, SOL, XRP, DOGE, ADA o BNB."
+            )
+        }
+
+    try:
+        respuesta = httpx.get(f"https://api.coinpaprika.com/v1/tickers/{identificador}", timeout=10)
+        respuesta.raise_for_status()
+    except httpx.HTTPError as error:
+        return {"error": f"No se pudo consultar la cotización de {moneda}: {error}"}
+
+    datos = respuesta.json()
+    cotizacion = datos.get("quotes", {}).get("USD")
+    if not cotizacion:
+        return {"error": f"La API no tiene una cotización en USD disponible para {moneda}"}
+    return {
+        "nombre": datos.get("name"),
+        "simbolo": datos.get("symbol"),
+        "precio_usd": cotizacion.get("price"),
+        "cambio_24h_pct": cotizacion.get("percent_change_24h"),
+        "actualizado": datos.get("last_updated"),
+        "fuente": "CoinPaprika",
+    }
 
 
 # ═══ S1 · Mi contador: gastos en SQLite, una tool que lee y otra que escribe ══════════
@@ -175,11 +286,16 @@ def buscar(pregunta: str, k: int = 3) -> list[dict]:
 
 documentos = Capability(
     id="mis_documentos",
-    description="Documentos de finanzas personales: contratos, facturas y garantías",
+    description=(
+        "Documentos adjuntos: contratos, facturas, garantías y recetas de cocina "
+        "(incluidas las recetas de chuletas glaseadas)"
+    ),
     # Citar la fuente y admitir cuando no hay datos: así se ve qué sale de los documentos y qué no
     instructions=(
-        "Para preguntas sobre pagos, contratos o garantías usa buscar_documentos y cita la fuente "
-        "entre corchetes, por ejemplo [contrato_alquiler-1]. "
+        "Para preguntas sobre pagos, contratos, garantías o recetas adjuntas, usa buscar_documentos. "
+        "En las preguntas de cocina, busca ingredientes y pasos en recetas.pdf; no completes la receta "
+        "con ingredientes o instrucciones inventados. Cita la fuente entre corchetes, por ejemplo "
+        "[contrato_alquiler-1] o [recetas-1]. "
         "Si no hay información suficiente para responder, di que no lo encuentras, no lo inventes."
     ),
 )

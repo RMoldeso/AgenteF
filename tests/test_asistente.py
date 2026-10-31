@@ -44,6 +44,73 @@ def test_consultar_gastos_sin_modelo():
     assert gastos["total_bs"] == 67
 
 
+def test_clasificacion_f1_usa_datos_de_la_api(monkeypatch):
+    def get(url, timeout):
+        assert url.endswith("/current/driverStandings.json")
+        return httpx.Response(200, request=httpx.Request("GET", url), json={
+            "MRData": {
+                "StandingsTable": {
+                    "season": "2030",
+                    "round": "4",
+                    "StandingsLists": [{
+                        "DriverStandings": [{
+                            "position": "1",
+                            "points": "100",
+                            "wins": "3",
+                            "Driver": {"givenName": "Ejemplo", "familyName": "Piloto"},
+                            "Constructors": [{"name": "Equipo"}],
+                        }],
+                    }],
+                },
+            },
+        })
+
+    monkeypatch.setattr(capacidades.httpx, "get", get)
+    resultado = capacidades.clasificacion_f1()
+    assert resultado["clasificacion"][0] == {
+        "posicion": 1,
+        "nombre": "Ejemplo Piloto",
+        "puntos": 100.0,
+        "victorias": 3,
+        "equipo": "Equipo",
+    }
+    assert resultado["fuente"] == "Jolpica F1 API"
+
+
+def test_cotizacion_cripto_reconoce_simbolo_y_nombre(monkeypatch):
+    def get(url, timeout):
+        assert url.endswith("/btc-bitcoin")
+        return httpx.Response(200, request=httpx.Request("GET", url), json={
+            "name": "Bitcoin",
+            "symbol": "BTC",
+            "last_updated": "2030-01-01T00:00:00Z",
+            "quotes": {"USD": {"price": 50000, "percent_change_24h": 2.5}},
+        })
+
+    monkeypatch.setattr(capacidades.httpx, "get", get)
+    resultado = capacidades.cotizacion_cripto(" Bitcoin ")
+    assert resultado["simbolo"] == "BTC"
+    assert resultado["precio_usd"] == 50000
+    assert resultado["fuente"] == "CoinPaprika"
+
+
+def test_cotizacion_cripto_rechaza_moneda_desconocida(monkeypatch):
+    def no_debe_consultar(*args, **kwargs):
+        raise AssertionError("no debe llamar a la API para una moneda desconocida")
+
+    monkeypatch.setattr(capacidades.httpx, "get", no_debe_consultar)
+    assert "No reconozco" in capacidades.cotizacion_cripto("moneda inventada")["error"]
+
+
+def test_documentos_incluye_recetas_adjuntas():
+    texto = "\n".join(
+        pagina.extract_text() or ""
+        for pagina in capacidades.PdfReader(capacidades.DOCUMENTOS / "recetas.pdf").pages
+    )
+    assert "CHULETAS" in texto.upper()
+    assert "GLASEADAS" in texto.upper()
+
+
 async def test_registrar_gasto_escribe_en_la_base():
     with asistente.asistente.override(model=pide("registrar_gasto", {
         "fecha": "2030-05-14", "categoria": "ocio", "descripcion": "Teatro", "monto": 30,
