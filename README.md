@@ -4,7 +4,7 @@ Plantilla del trabajo final del curso **«Más allá de los chatbots»** de Alex
 
 | Ya trae | Sesión | Dónde |
 |---|---|---|
-| Tools de lectura con APIs públicas (inflación del Banco Mundial, clima de Open Meteo) | S1 | `capacidades.py` → `apis` |
+| Tools de lectura con APIs públicas (Fórmula 1 y criptomonedas) | S1 | `capacidades.py` → `apis` |
 | Mi contador: gastos en SQLite, una tool que lee y otra que escribe | S1 | `capacidades.py` → `consulta` y `registro` |
 | RAG: buscar en PDFs y citar la fuente | S2 | `capacidades.py` → `documentos` |
 | El agente y su núcleo async: `responder(mensaje)` | S5 | `asistente.py` |
@@ -46,10 +46,10 @@ uv run asistente.py      # conversa en la terminal; «salir» para terminar
 ```
 
 Prueba estas preguntas:
-- «¿Qué temperatura hace en Cochabamba?»
-- «¿Cuál fue la inflación de Bolivia en 2023?»
+- «¿Quién lidera la clasificación de pilotos de Fórmula 1?»
+- «¿Cuál es el precio actual de Bitcoin?»
 - «¿Cuánto gasté en transporte?» y luego «Registra 35 Bs de almuerzo hoy».
-- «Se me cayó la laptop, ¿la cubre la garantía?»: busca en los PDFs y cita `[garantia_laptop-1]`.
+- «¿Cómo se preparan las chuletas glaseadas?»: busca en las recetas y cita `[recetas-1]`.
 
 Para comprobar el código sin gastar cuota del modelo, corre `uv run pytest`.
 

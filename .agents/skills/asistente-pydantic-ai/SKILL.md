@@ -29,7 +29,7 @@ Quien te pide ayuda está aprendiendo, así que:
 | Archivo | Qué tiene |
 |---|---|
 | `config.py` | `Settings` (lee `.env` o las variables de Render) y el `modelo` (Gemini u Ollama) |
-| `capacidades.py` | `apis` (Banco Mundial y clima, S1), `consulta` y `registro` (gastos en SQLite, S1), `documentos` (RAG con PDFs, S2). **Aquí van las tuyas** |
+| `capacidades.py` | `apis` (Fórmula 1 y criptomonedas, S1), `consulta` y `registro` (gastos en SQLite, S1), `documentos` (RAG con recetas en PDF, S2). **Aquí van las tuyas** |
 | `asistente.py` | El `Agent`: instrucciones, lista de capabilities y `responder(mensaje)`. Sin memoria: cada mensaje empieza de cero |
 | `bot.py` | Telegram: `/start`, la lista de permitidos, *polling* en el equipo y webhook en Render |
 | `api.py` | **Extra opcional, no visto en clase:** el mismo `responder` como API HTTP con FastAPI y `API_TOKENS` (pasos en `API.md`) |

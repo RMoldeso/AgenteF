@@ -25,49 +25,14 @@ from config import DATOS, settings
 apis = Capability(
     id="apis_publicas",
     description=(
-        "Consulta indicadores económicos, clima, clasificación actual de Fórmula 1 "
-        "y cotizaciones de criptomonedas con APIs públicas gratuitas"
+        "Consulta la clasificación actual de Fórmula 1 y cotizaciones de criptomonedas "
+        "con APIs públicas gratuitas"
     ),
     instructions=(
-        "Usa las APIs para obtener datos reales de economía, clima, Fórmula 1 y criptomonedas. "
+        "Usa las APIs para obtener datos reales de Fórmula 1 y criptomonedas. "
         "Indica la fuente y no inventes datos."
     ),
 )
-
-
-@apis.tool_plain
-def inflacion(pais: str, anio: int) -> dict:
-    """Inflación anual de un país en un año, según el Banco Mundial.
-
-    Args:
-        pais: código ISO del país, por ejemplo 'BO' para Bolivia o 'PE' para Perú
-        anio: año, por ejemplo 2024
-    """
-    url = f"https://api.worldbank.org/v2/country/{pais}/indicator/FP.CPI.TOTL.ZG"
-    respuesta = httpx.get(url, params={"date": anio, "format": "json"}, timeout=10)
-    respuesta.raise_for_status()
-    datos = respuesta.json()
-
-    # La API responde [metadatos, registros]. Si no hay dato, devolvemos un aviso que el modelo puede leer
-    if len(datos) < 2 or not datos[1] or datos[1][0]["value"] is None:
-        return {"error": f"No hay datos de inflación disponibles para {pais} en {anio}"}
-
-    registro = datos[1][0]
-    return {
-        "pais": registro["country"]["value"],
-        "anio": registro["date"],
-        "inflacion_pct": round(registro["value"], 2),
-        "fuente": "Banco Mundial",  # devolver la fuente evita que el modelo invente una
-    }
-
-
-@apis.tool_plain
-def clima_cochabamba() -> dict:
-    """Temperatura actual de Cochabamba, según Open Meteo."""
-    params = {"latitude": -17.38, "longitude": -66.15, "current": "temperature_2m"}
-    respuesta = httpx.get("https://api.open-meteo.com/v1/forecast", params=params, timeout=10)
-    respuesta.raise_for_status()
-    return {"temperatura": respuesta.json()["current"]["temperature_2m"], "fuente": "Open Meteo"}
 
 
 @apis.tool_plain
@@ -332,7 +297,7 @@ def registrar_gasto(fecha: str, categoria: Categoria, descripcion: str, monto: f
 
 
 # ═══ S2 · RAG: buscar en mis documentos (PDFs) y citar la fuente ══════════════════════
-DOCUMENTOS = DATOS / "documentos"  # PDFs ficticios de finanzas personales
+DOCUMENTOS = DATOS / "documentos"  # documentos adjuntos ficticios
 
 
 def embeddings_de(textos: list[str]) -> list[list[float]]:
@@ -376,15 +341,14 @@ def buscar(pregunta: str, k: int = 3) -> list[dict]:
 documentos = Capability(
     id="mis_documentos",
     description=(
-        "Documentos adjuntos: contratos, facturas, garantías y recetas de cocina "
-        "(incluidas las recetas de chuletas glaseadas)"
+        "Recetas de cocina adjuntas, incluidas las recetas de chuletas glaseadas"
     ),
     # Citar la fuente y admitir cuando no hay datos: así se ve qué sale de los documentos y qué no
     instructions=(
-        "Para preguntas sobre pagos, contratos, garantías o recetas adjuntas, usa buscar_documentos. "
-        "En las preguntas de cocina, busca ingredientes y pasos en recetas.pdf; no completes la receta "
+        "Para preguntas sobre las recetas adjuntas, usa buscar_documentos. "
+        "Busca ingredientes y pasos en recetas.pdf; no completes la receta "
         "con ingredientes o instrucciones inventados. Cita la fuente entre corchetes, por ejemplo "
-        "[contrato_alquiler-1] o [recetas-1]. "
+        "[recetas-1]. "
         "Si no hay información suficiente para responder, di que no lo encuentras, no lo inventes."
     ),
 )
